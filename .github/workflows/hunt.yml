@@ -1,0 +1,43 @@
+# Tries to create the Oracle Always Free A1 server every 15 minutes until it lands.
+# See hunt.sh for what each run does. Secrets hold the OCI API key and the ntfy topic.
+name: hunt
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  actions: write # lets hunt.sh disable this workflow once done
+  contents: read
+
+concurrency:
+  group: hunt # never run two Apply jobs at once
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install OCI CLI
+        run: pipx install oci-cli
+      - name: Write OCI config
+        env:
+          OCI_USER: ${{ secrets.OCI_USER }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+          OCI_KEY: ${{ secrets.OCI_KEY }}
+        run: |
+          mkdir -p ~/.oci
+          printf '%s\n' "$OCI_KEY" > ~/.oci/key.pem
+          printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=%s\n' \
+            "$OCI_USER" "$OCI_FINGERPRINT" "$OCI_TENANCY" "$OCI_REGION" ~/.oci/key.pem > ~/.oci/config
+          chmod 600 ~/.oci/key.pem ~/.oci/config
+      - name: Try to create the server
+        env:
+          GH_TOKEN: ${{ github.token }}
+          OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
+          STACK_ID: ${{ secrets.STACK_ID }}
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+        run: bash hunt.sh
