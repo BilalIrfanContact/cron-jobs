@@ -1,20 +1,20 @@
 # Tries to create the Oracle Always Free A1 server every 15 minutes until it lands.
-# See hunt.sh for what each run does. Secrets hold the OCI API key and the ntfy topic.
-name: hunt
+# See job.sh for what each run does. Secrets hold the OCI API key and the ntfy topic.
+name: job
 on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:
-  actions: write # lets hunt.sh disable this workflow once done
+  actions: write # lets job.sh disable this workflow once done
   contents: read
 
 concurrency:
-  group: hunt # never run two Apply jobs at once
+  group: job # never run two Apply jobs at once
 
 jobs:
-  hunt:
+  job:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -40,4 +40,4 @@ jobs:
           OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
           STACK_ID: ${{ secrets.STACK_ID }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: bash hunt.sh
+        run: bash job.sh
