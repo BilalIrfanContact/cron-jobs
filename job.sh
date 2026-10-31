@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # One attempt at grabbing the Always Free A1 server: applies the saved Resource Manager
-# stack and reports the outcome. Run by .github/workflows/job.yml every 15 minutes.
-#   - server exists or gets created -> push notification, workflow disables itself
-#   - out of capacity / throttled   -> exit quietly, next run tries again
-#   - anything else                 -> push notification, workflow disables itself
+# stack and reports the outcome. Called every 15 minutes by .github/workflows/job.yml.
+#   - server exists or gets created -> push notification, workflow disables itself, exit 3
+#   - out of capacity / throttled   -> exit 0 quietly, the next attempt tries again
+#   - anything else                 -> push notification, workflow disables itself, exit 1
 # Needs: oci CLI configured, gh CLI with GH_TOKEN, STACK_ID, OCI_TENANCY, NTFY_TOPIC.
 set -uo pipefail
 export SUPPRESS_LABEL_WARNING=True
@@ -27,7 +27,7 @@ The hunt has stopped." urgent tada
 existing=$(oci compute instance list -c "$OCI_TENANCY" --all \
   --query "data[?shape=='VM.Standard.A1.Flex' && \"lifecycle-state\"!='TERMINATED' && \"lifecycle-state\"!='TERMINATING'] | [0].id" \
   --raw-output)
-if [ -n "$existing" ]; then report_server "$existing"; exit 0; fi
+if [ -n "$existing" ]; then report_server "$existing"; exit 3; fi
 
 out=$(oci --no-retry resource-manager job create-apply-job --stack-id "$STACK_ID" \
   --execution-plan-strategy AUTO_APPROVED \
@@ -37,7 +37,7 @@ job=$(grep -o 'ocid1.ormjob[A-Za-z0-9._-]*' <<<"$out" | head -1)
 if grep -q '"lifecycle-state": "SUCCEEDED"' <<<"$out"; then
   id=$(oci compute instance list -c "$OCI_TENANCY" --all \
     --query "data[?shape=='VM.Standard.A1.Flex' && \"lifecycle-state\"!='TERMINATED'] | [0].id" --raw-output)
-  report_server "$id"; exit 0
+  report_server "$id"; exit 3
 fi
 
 # Errors that just mean "try again later" (rate limit, a job already running, Oracle hiccup).

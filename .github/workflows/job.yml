@@ -1,22 +1,24 @@
 # Tries to create the Oracle Always Free A1 server every 15 minutes until it lands.
-# See job.sh for what each run does. Secrets hold the OCI API key and the ntfy topic.
+# GitHub's cron is best-effort (it ran this only every ~5h), so each run loops for ~5.5h
+# and then dispatches the next run itself. The cron below only restarts a broken chain.
+# See job.sh for what each attempt does. Secrets hold the OCI API key and the ntfy topic.
 name: job
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "7 */3 * * *"
   workflow_dispatch:
 
 permissions:
-  actions: write # lets job.sh disable this workflow once done
+  actions: write # lets job.sh disable this workflow, and the run dispatch the next one
   contents: read
 
 concurrency:
-  group: job # never run two Apply jobs at once
+  group: job # one run at a time; extra triggers wait as a single pending run
 
 jobs:
   job:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 350
     steps:
       - uses: actions/checkout@v5
       - name: Install OCI CLI
@@ -34,10 +36,17 @@ jobs:
           printf '[DEFAULT]\nuser=%s\nfingerprint=%s\ntenancy=%s\nregion=%s\nkey_file=%s\n' \
             "$OCI_USER" "$OCI_FINGERPRINT" "$OCI_TENANCY" "$OCI_REGION" ~/.oci/key.pem > ~/.oci/config
           chmod 600 ~/.oci/key.pem ~/.oci/config
-      - name: Try to create the server
+      - name: Try every 15 minutes, then hand off to a fresh run
         env:
           GH_TOKEN: ${{ github.token }}
           OCI_TENANCY: ${{ secrets.OCI_TENANCY }}
           STACK_ID: ${{ secrets.STACK_ID }}
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-        run: bash job.sh
+        run: |
+          for i in $(seq 21); do
+            rc=0; bash job.sh || rc=$?
+            if [ $rc -eq 3 ]; then exit 0; fi # server secured
+            if [ $rc -ne 0 ]; then exit 1; fi # stopped on an unexpected error
+            if [ $i -lt 21 ]; then sleep 840; fi
+          done
+          gh workflow run job.yml
